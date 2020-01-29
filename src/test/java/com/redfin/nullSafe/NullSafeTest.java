@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;

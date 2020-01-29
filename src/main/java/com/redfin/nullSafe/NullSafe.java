@@ -55,197 +55,116 @@ import java.util.function.Supplier;
  *                    .ifNull(() -> { throw new IllegalStateException("agent is missing an email address: " + agent); })
  *                    .get();
  * </pre>
- * Accessor methods are invoked on demand—that is only once {@link Accessor#get()} is called.
+ * Access methods and null handlers are invoked on demand—that is only once {@link #get()} is called.
  */
-public class NullSafe {
+public class NullSafe<T> {
 
-    private NullSafe() {
-        // private constructor to prevent instantiation
+    private final Supplier<T> dataSupplier;
+    private Supplier<T> nullHandler;
+
+    //region public constructors
+
+    /**
+     * Construct a {@link NullSafe} instance from some source data.
+     *
+     * @param data the source data from which nested data will be accessed
+     * @param <SOURCE> the type of source data
+     * @return a new {@link NullSafe} instance
+     */
+    public static <SOURCE> NullSafe<SOURCE> from(SOURCE data) {
+        return new NullSafe<>(() -> data);
     }
 
     /**
-     * Create a new {@link Data} from source data from which nested data can be accessed in a null-safe manner.
+     * Construct a {@link NullSafe} instance from some {@link Optional} source data. The {@link Optional} will be
+     * unwrapped at the time this method is invoked.
      *
-     * @param data the data from which nested data will be accessed
-     * @param <SOURCE> the type of this root/source data
-     * @return a new {@link Data} instance
+     * @param dataOptional the {@link Optional} source data from which nested data will be accessed
+     * @param <SOURCE> the type of source data
+     * @return a new {@link NullSafe} instance
      */
-    public static <SOURCE> Data<SOURCE> from(SOURCE data) {
-        return new Data<>(data);
+    public static <SOURCE> NullSafe<SOURCE> from(Optional<SOURCE> dataOptional) {
+        return new NullSafe<>(() -> dataOptional.orElse(null));
+    }
+
+    //endregion
+
+    // private constructor to prevent instantiation
+    private NullSafe(Supplier<T> dataSupplier) {
+        this.dataSupplier = dataSupplier;
+        this.nullHandler = () -> null;
+    }
+
+    //region public methods
+
+    /**
+     * Set the null handler for this {@link NullSafe} instance such that if the accessed data is null,
+     * rather than returning null (the default behavior), the null handler will be invoked, and its return value will be
+     * returned instead.
+     *
+     * @param nullHandler a supplier for fall-back data (if desired) that is invoked if this the data provided by this
+     *                   {@link NullSafe} instance is null
+     * @return this {@link NullSafe} instance
+     */
+    public NullSafe<T> ifNull(Supplier<T> nullHandler) {
+        this.nullHandler = nullHandler;
+        return this;
     }
 
     /**
-     * Same as {@link #from(Object)} except that the {@link Optional} will be unwrapped at the time of instantiation
-     * and provided to any subsequent {@link Accessor} in its unwrapped (or null) form.
+     * Access nested data provided by the given {@code accessorFunction}; the data contained within the
+     * {@link NullSafe} instance will be applied to the provided function.
      *
-     * @param data the data from which nested data will be accessed
-     * @param <SOURCE> the type of this root/source data
-     * @return a new {@link Data} instance
+     * @param accessorFunction a function to access nested data
+     * @param <OUTPUT> the output type of the given function
+     * @return a new {@link NullSafe} instance
      */
-    public static <SOURCE> Data<SOURCE> from(Optional<SOURCE> data) {
-        return new Data<>(data.orElse(null));
-    }
-
-    /**
-     * A container for the root/source data from which one can make null-safe accesses.
-     * <p/>
-     * <b>Q: Why do we need a separate data class rather than just instantiating a {@link NullSafe.Accessor}
-     * directly?</b> (Stop reading here if you are not interested in learning about the design decisions that underly
-     * this library.)
-     * <p/>
-     * <b>A: We can't infer the output type, which the accessor requires, until we've been given the function to be
-     * called on the provided data.</b> For example, the following does not compile without sacrificing type safety:
-     * <pre>{@code
-     *     NullSafe.of(data) // returns Accessor<Input, ?>
-     *             .access(method1) // returns Accessor<?, Output1>
-     *             .access(method2) // returns Accessor<Output1, Output2>
-     * }</pre>
-     * because we don't know the output type of the first accessor in the chain. Such code will yield an error like the
-     * following:
-     * <blockquote>
-     *     no instance(s) of type variable(s) exist so that capture of ? conforms to Input
-     * </blockquote>
-     * <p/>
-     * So without this initial {@link NullSafe.Data} class in the chain, the first method in the accessor
-     * chain would have to look something like:
-     * <pre>{@code
-     *     NullSafe.of(data, method1) // returns Accessor<Input, Output1>
-     *             .access(method2) // returns Accessor<Output1, Output2>
-     * }</pre>
-     * Beyond the fact that such a style makes it impossible to insert a null handler between {@code data} and
-     * {@code method1} (e.g. {@code NullSafe.of(data).ifNull(f).access(method1)}), such a style disrupts the syntactic
-     * intent of the library in that the caller must switch between one style of accessing data (with the first method)
-     * and another (for subsequent methods).
-     * <p/>
-     * Therefore, the library is designed to provide null-safe accesses beginning with this {@link NullSafe.Data} class
-     * as follows, where {@code data} is of type {@code Input}; {@code method1} returns type {@code Output1}; and
-     * {@code method2} returns type {@code Output2}:
-     * <pre>{@code
-     *     NullSafe.of(data) // returns Data<Input>
-     *             .access(method1) // returns Accessor<Input, Output1>
-     *             .access(method2) // returns Accessor<Output1, Output2>
-     * }</pre>
-     *
-     * @param <SOURCE> the type of data from which nested data will be accessed
-     */
-    public static class Data<SOURCE> {
-        private final SOURCE data;
-
-        private Data(SOURCE data) {
-            this.data = data;
-        }
-
-        /**
-         * Add a null handler to be invoked in case this data is null.
-         *
-         * @param nullHandler a supplier for fall-back data (if desired) that is invoked if this data is null
-         * @return a new accessor
-         */
-        public Accessor<SOURCE, SOURCE> ifNull(Supplier<SOURCE> nullHandler) {
-            return new Accessor<>(() -> data, a -> data, nullHandler);
-        }
-
-        /**
-         * Access a nested field from this data.
-         *
-         * @param accessorFunction a function to access a nested field from this data
-         * @param <OUTPUT> the output type of the new accessor
-         * @return a new accessor
-         */
-        public <OUTPUT> Accessor<SOURCE, OUTPUT> access(Function<SOURCE, OUTPUT> accessorFunction) {
-            return new Accessor<>(() -> data, accessorFunction, () -> null);
-        }
-
-        /**
-         * Same as {@link #access(Function)} except used to unwrap {@link Optional} values returned from the provided
-         * {@code accessorFunction}.
-         *
-         * @param accessorFunction a function to access a nested {@link Optional} field from this data
-         * @param <OUTPUT> the output type of the new accessor
-         * @return a new accessor
-         */
-        public <OUTPUT> Accessor<SOURCE, OUTPUT> accessAndUnwrapOptional(
-                Function<SOURCE, Optional<OUTPUT>> accessorFunction) {
-            return new Accessor<>(() -> data, getUnwrappedAccessorFunction(accessorFunction), () -> null);
-        }
-    }
-
-    public static class Accessor<INPUT, OUTPUT> {
-        private final Supplier<INPUT> dataSupplier;
-        private Function<INPUT, OUTPUT> accessorFunction;
-        private Supplier<OUTPUT> nullHandler;
-
-        private Accessor(Supplier<INPUT> dataSupplier, Function<INPUT, OUTPUT> accessorFunction,
-                         Supplier<OUTPUT> nullHandler) {
-            this.dataSupplier = dataSupplier;
-            this.accessorFunction = accessorFunction;
-            this.nullHandler = nullHandler;
-        }
-
-        /**
-         * Set the null handler for this accessor such that if the data retrieved by this accessor is null, rather than
-         * returning null (the default behavior), the null handler will be invoked, and its return value will be
-         * returned instead.
-         *
-         * @param nullHandler a supplier for fall-back data (if desired) that is invoked if this accessor's data is null
-         * @return this accessor
-         */
-        public Accessor<INPUT, OUTPUT> ifNull(Supplier<OUTPUT> nullHandler) {
-            this.nullHandler = nullHandler;
-            return this;
-        }
-
-        /**
-         * @return the nested data from this accessor
-         */
-        public OUTPUT get() {
-            INPUT input = dataSupplier.get();
-            if (input == null) {
-                return nullHandler.get();
+    public <OUTPUT> NullSafe<OUTPUT> access(Function<T, OUTPUT> accessorFunction) {
+        return new NullSafe<>(() -> {
+            T data = get();
+            if (data == null) {
+                return null;
             }
-            OUTPUT output = accessorFunction.apply(input);
-            if (output == null) {
-                return nullHandler.get();
+            return accessorFunction.apply(data);
+        });
+    }
+
+    /**
+     * Same as {@link #access(Function)} except used to unwrap {@link Optional} values returned from the provided
+     * {@code accessorFunction}.
+     *
+     * @param accessorFunction a function to access nested data, expected to return an {@link Optional} of type
+     * {@code OUTPUT}
+     * @param <OUTPUT> the output type of the given function, after the {@link Optional} is unwrapped
+     * @return a new {@link NullSafe} instance
+     */
+    public <OUTPUT> NullSafe<OUTPUT> accessAndUnwrapOptional(Function<T, Optional<OUTPUT>> accessorFunction) {
+        return new NullSafe<>(() -> {
+            T data = get();
+            if (data == null) {
+                return null;
             }
-            return output;
-        }
-
-        /**
-         * @return the nested data from this accessor wrapped in a nullable {@link Optional}
-         */
-        public Optional<OUTPUT> toOptional() {
-            return Optional.ofNullable(get());
-        }
-
-        /**
-         * Use this method to chain a new nested accessor to the current accessor.
-         *
-         * @param chainedAccessorFunction a function which will access nested data from the current accessor's result
-         * @param <CHAINED_OUTPUT> the output type of the new chained accessor
-         * @return a new chained accessor
-         */
-        public <CHAINED_OUTPUT> Accessor<OUTPUT, CHAINED_OUTPUT> access(
-                Function<OUTPUT, CHAINED_OUTPUT> chainedAccessorFunction) {
-            return new Accessor<>(this::get, chainedAccessorFunction, () -> null);
-        }
-
-        /**
-         * Same as {@link #access(Function)} except used to unwrap {@link Optional} values returned from the provided
-         * {@code chainedAccessorFunction}.
-         *
-         * @param chainedAccessorFunction a function which will access and unwrap nested {@link Optional} data from the
-         *                                current accessor's result
-         * @param <CHAINED_OUTPUT> the output type of the new chained accessor
-         * @return a new chained accessor
-         */
-        public <CHAINED_OUTPUT> Accessor<OUTPUT, CHAINED_OUTPUT> accessAndUnwrapOptional(
-                Function<OUTPUT, Optional<CHAINED_OUTPUT>> chainedAccessorFunction) {
-            return new Accessor<>(this::get, getUnwrappedAccessorFunction(chainedAccessorFunction), () -> null);
-        }
+            return accessorFunction.apply(data).orElse(null);
+        });
     }
 
-    private static <INPUT, OUTPUT> Function<INPUT, OUTPUT> getUnwrappedAccessorFunction(
-            Function<INPUT, Optional<OUTPUT>> accessorFunction) {
-        return t -> accessorFunction.apply(t).orElse(null);
+    /**
+     * @return the nested data from this {@link NullSafe} instance
+     */
+    public T get() {
+        T data = dataSupplier.get();
+        if (data == null) {
+            return nullHandler.get();
+        }
+        return data;
     }
+
+    /**
+     * @return the nested data from this {@link NullSafe} instance, wrapped in a nullable {@link Optional}
+     */
+    public Optional<T> toOptional() {
+        return Optional.ofNullable(get());
+    }
+
+    //endregion
 }
