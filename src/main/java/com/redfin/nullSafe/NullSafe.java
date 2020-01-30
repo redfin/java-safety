@@ -43,17 +43,17 @@ import java.util.function.Supplier;
  * </pre>
  * The library will return null if the first "root-node" data (in the case above, the result from {@code getA()}),
  * or any subsequently fetched data from the provided functions, evaluates to null. You can also specify custom null
- * handlers at any level of the chain. The latter-most null handler will catch any nulls that preceded it. (The default
- * null handler simply returns null.)
+ * handlers, or backup values directly, at any level of the chain. The latter-most null handler will catch any nulls
+ * that preceded it. (The default null handler simply returns null.)
  * <pre>
  *     ClassA a = getA();
  *     return NullSafe.from(a)
- *         .ifNull(() -> { throw new IllegalArgumentException("a must be non-null"); })
+ *         .ifNull(() -> { throw new IllegalArgumentException("a must be non-null"); }) // throwing if null
  *         .access(ClassA::getB)
  *         .access(ClassB::getC)
- *         .ifNull(() -> defaultC)
+ *         .ifNull(defaultC) // providing a default value directly
  *         .access(ClassC::getSomeField)
- *         .ifNull(() -> { throw new IllegalStateException("missing data for " + a); })
+ *         .ifNull(() -> getDefaultField()) // invoking another function to get the default
  *         .get(); // or, alternatively, .toOptional()
  * </pre>
  * Access methods and null handlers are invoked on demand—that is only once {@link #toOptional()} or {@link #get()} is
@@ -124,6 +124,18 @@ public class NullSafe<T> {
      */
     public NullSafe<T> ifNull(Supplier<T> nullHandler) {
         this.nullHandler = nullHandler;
+        return this;
+    }
+
+    /**
+     * Version of {@link #ifNull(Supplier)} that allows you to provide a backup value directly rather than a
+     * {@link Supplier} function to be called in the case of null data.
+     *
+     * @param backupValue a value to be provided in the case of null data
+     * @return this {@link NullSafe} instance
+     */
+    public NullSafe<T> ifNull(T backupValue) {
+        this.nullHandler = () -> backupValue;
         return this;
     }
 

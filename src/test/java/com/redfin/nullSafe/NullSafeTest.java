@@ -261,6 +261,20 @@ public class NullSafeTest {
         assertFalse(resultOptional.isPresent());
     }
 
+    /**
+     * Tests that a backup VALUE rather than a SUPPLIER works as expected
+     */
+    @Test
+    public void testThat_ifNullValueWorks() {
+        ClassA objectA = new ClassA("testObjectA");
+        ClassB backupObjectB = new ClassB("backupObjectB");
+        ClassB result = NullSafe.from(objectA)
+                .access(ClassA::getNullB)
+                .ifNull(backupObjectB)
+                .get();
+        assertThat(result, is(backupObjectB));
+    }
+
     private class ClassE {
         private final String identifier;
 
