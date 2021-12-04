@@ -2,9 +2,12 @@ package com.redfin.nullSafe;
 
 import org.junit.Test;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -273,6 +276,86 @@ public class NullSafeTest {
                 .ifNull(backupObjectB)
                 .get();
         assertThat(result, is(backupObjectB));
+    }
+
+    @Test
+    public void testThat_nullGetReturnsEmptyStream() {
+        Object nullObject = null;
+        Stream<Object> results = NullSafe.from(nullObject).stream();
+
+        assertTrue("The stream should be empty", results.findAny().isEmpty());
+    }
+
+    @Test
+    public void testThat_nonNullGetReturnsNonEmptyStream() {
+        final Object nonNullValue = "";
+
+        List<Object> results = NullSafe.from(nonNullValue).ifNull(nonNullValue).stream().collect(Collectors.toList());
+
+        assertTrue("The stream results should only have a size of 1", results.size() == 1);
+        assertTrue("the stream results should contain the given data", nonNullValue.equals(results.get(0)));
+    }
+
+    @Test
+    public void testThat_getReturnsNullAsNotTrulyNullSafe() {
+        Object nullObject=  null;
+        Supplier<Object> nullValueSupplier = () -> null;
+
+        boolean results = NullSafe.from(nullObject).ifNull(nullValueSupplier).isNonNull();
+
+        assertFalse("NullSafe's get() returned null", results);
+    }
+
+    @Test
+    public void testThat_getReturnsNonNullUsingDataAsTrulyNullSafe() {
+        Supplier<String> nullValueSupplier = () -> null;
+
+        boolean results = NullSafe.from("").ifNull(nullValueSupplier).isNonNull();
+
+        assertTrue("NullSafe's get() returned null", results);
+    }
+
+    @Test
+    public void testThat_getReturnsNonNullUsingSupplierAsTrulyNullSafe() {
+        String nullData = null;
+        Supplier<String> nonNullValueSupplier = () -> "";
+
+        boolean results = NullSafe.from(nullData).ifNull(nonNullValueSupplier).isNonNull();
+
+        assertTrue("NullSafe's get() returned null", results);
+    }
+
+    @Test
+    public void testThat_getTrulyNullSafeCacheResetsWhenNewNullHandler() {
+        String nullData = null;
+        Supplier<String> nonNullValueSupplier = () -> "";
+        Supplier<String> nullValueSupplier = () -> null;
+
+        NullSafe<String> nullSafe = NullSafe.from(nullData);
+
+        assertFalse("Initial null safe given null data not truly null safe", nullSafe.isNonNull());
+
+        nullSafe.ifNull(nonNullValueSupplier);
+        assertTrue("Supplier provided non-null value", nullSafe.isNonNull());
+
+        nullSafe.ifNull(nullValueSupplier);
+        assertFalse("Supplier provided null-value", nullSafe.isNonNull());
+    }
+
+    @Test
+    public void testThat_getTrulyNullSafeCacheResetsWhenNewBackupData() {
+        String nullData = null;
+        String nonNullData = "";
+
+        NullSafe<String> nullSafe = NullSafe.from(nullData);
+
+        assertFalse("Initial null safe given null data is not truly null safe", nullSafe.isNonNull());
+
+        nullSafe.ifNull(nonNullData);
+        assertTrue("Provided non-null value is truly null safe", nullSafe.isNonNull());
+
+        nullSafe.ifNull(nullData);
+        assertFalse("Provided null value is truly null safe", nullSafe.isNonNull());
     }
 
     private class ClassE {
