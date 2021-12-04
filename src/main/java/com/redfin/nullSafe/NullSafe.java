@@ -3,6 +3,7 @@ package com.redfin.nullSafe;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 /**
  * This is a utility class that provides null-safe access to nested fields, similar to that implicitly supported in
@@ -67,13 +68,14 @@ public class NullSafe<T> {
 
     private final Supplier<T> dataSupplier;
     private Supplier<T> nullHandler;
+    private Boolean isTrulyNullSafe;
 
     //region public constructors
 
     /**
      * Construct a {@link NullSafe} instance from some source data.
      *
-     * @param data the source data from which nested data will be accessed
+     * @param data     the source data from which nested data will be accessed
      * @param <SOURCE> the type of source data
      * @return a new {@link NullSafe} instance
      */
@@ -86,10 +88,10 @@ public class NullSafe<T> {
      * unwrapped at the time this method is invoked.
      *
      * @param dataOptional the {@link Optional} source data from which nested data will be accessed
-     * @param <SOURCE> the type of source data
+     * @param <SOURCE>     the type of source data
      * @return a new {@link NullSafe} instance
      */
-    public static <SOURCE> NullSafe<SOURCE> from(Optional<SOURCE> dataOptional) {
+    public static <SOURCE> NullSafe<SOURCE> from(Optional<? extends SOURCE> dataOptional) {
         return new NullSafe<>(() -> dataOptional.orElse(null));
     }
 
@@ -119,11 +121,12 @@ public class NullSafe<T> {
      * </pre>
      *
      * @param nullHandler a supplier for fall-back data (if desired) that is invoked if this the data provided by this
-     *                   {@link NullSafe} instance is null
+     *                    {@link NullSafe} instance is null
      * @return this {@link NullSafe} instance
      */
     public NullSafe<T> ifNull(Supplier<T> nullHandler) {
         this.nullHandler = nullHandler;
+        isTrulyNullSafe = null;
         return this;
     }
 
@@ -136,6 +139,7 @@ public class NullSafe<T> {
      */
     public NullSafe<T> ifNull(T backupValue) {
         this.nullHandler = () -> backupValue;
+        isTrulyNullSafe = null;
         return this;
     }
 
@@ -144,10 +148,10 @@ public class NullSafe<T> {
      * {@link NullSafe} instance will be applied to the provided function.
      *
      * @param accessorFunction a function to access nested data
-     * @param <OUTPUT> the output type of the given function
+     * @param <OUTPUT>         the output type of the given function
      * @return a new {@link NullSafe} instance
      */
-    public <OUTPUT> NullSafe<OUTPUT> access(Function<T, OUTPUT> accessorFunction) {
+    public <OUTPUT> NullSafe<OUTPUT> access(Function<? super T, ? extends OUTPUT> accessorFunction) {
         return new NullSafe<>(() -> {
             T data = get();
             if (data == null) {
@@ -162,11 +166,11 @@ public class NullSafe<T> {
      * {@code accessorFunction}.
      *
      * @param accessorFunction a function to access nested data, expected to return an {@link Optional} of type
-     * {@code OUTPUT}
-     * @param <OUTPUT> the output type of the given function, after the {@link Optional} is unwrapped
+     *                         {@code OUTPUT}
+     * @param <OUTPUT>         the output type of the given function, after the {@link Optional} is unwrapped
      * @return a new {@link NullSafe} instance
      */
-    public <OUTPUT> NullSafe<OUTPUT> accessAndUnwrapOptional(Function<T, Optional<OUTPUT>> accessorFunction) {
+    public <OUTPUT> NullSafe<OUTPUT> accessAndUnwrapOptional(Function<? super T, Optional<? extends OUTPUT>> accessorFunction) {
         return new NullSafe<>(() -> {
             T data = get();
             if (data == null) {
@@ -200,6 +204,32 @@ public class NullSafe<T> {
      */
     public Optional<T> toOptional() {
         return Optional.ofNullable(get());
+    }
+
+    /**
+     * Get the nested data provided by this {@link NullSafe} instance and converts into a {@link Stream}.
+     *
+     * @return {@link Stream} of the nested data, if null then returns an empty {@link Stream}.
+     */
+    public Stream<T> stream() {
+        T data = get();
+        if (data == null) {
+            return Stream.empty();
+        }
+        return Stream.of(data);
+    }
+
+    /**
+     * Checks if {@link #get()} returns non-null value.
+     *
+     * @apiNote The value is cache to minimize performance of repeated use.
+     * @return {@code true} if {@link #get()} returns non-null value, otherwise {@code false}.
+     */
+    public boolean isNonNull() {
+        if (isTrulyNullSafe == null) {
+            isTrulyNullSafe = get() != null;
+        }
+        return isTrulyNullSafe;
     }
 
     /**
@@ -298,6 +328,7 @@ public class NullSafe<T> {
      *                      .get();
      *     }
      * }</pre>
+     *
      * @return a new {@link NullSafe} instance created with the fully evaluated data provided by this
      * {@link NullSafe} instance
      */
